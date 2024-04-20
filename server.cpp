@@ -3,56 +3,32 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <thread>
-#include <mutex>
 
 #pragma comment(lib, "ws2_32.lib")
 
-struct AcceptedSocket
-{
-    SOCKET acceptedSocketFD;
-    sockaddr_in address;
-    int error;
-    bool acceptedSuccessfully;
-};
+#define MAX_CLIENTS 10
 
-void broadcastMessage(const char* message, struct AcceptedSocket* acceptedSockets, int acceptedSocketsCount, SOCKET senderSocketFD, std::mutex& acceptedSocketsMutex) {
-    acceptedSocketsMutex.lock();
-    for (int i = 0; i < acceptedSocketsCount; i++) {
-        if (acceptedSockets[i].acceptedSocketFD != senderSocketFD) {
-            send(acceptedSockets[i].acceptedSocketFD, message, strlen(message), 0);
+SOCKET acceptedSockets[MAX_CLIENTS];
+int acceptedSocketsCount = 0;
+
+void receiveAndBroadcast(SOCKET senderSocket, const char* buffer) {
+    for (int i = 0; i < acceptedSocketsCount; ++i) {
+        if (acceptedSockets[i] != senderSocket) {
+            send(acceptedSockets[i], buffer, strlen(buffer), 0);
         }
     }
-    acceptedSocketsMutex.unlock();
 }
 
-struct AcceptedSocket* acceptIncomingConnection(SOCKET serverSocketFD) {
-    sockaddr_in clientAddress;
-    int clientAddressSize = sizeof(clientAddress);
-    SOCKET clientSocketFD = accept(serverSocketFD, reinterpret_cast<sockaddr*>(&clientAddress), &clientAddressSize);
-
-    struct AcceptedSocket* acceptedSocket = new struct AcceptedSocket;
-    acceptedSocket->address = clientAddress;
-    acceptedSocket->acceptedSocketFD = clientSocketFD;
-    acceptedSocket->acceptedSuccessfully = clientSocketFD != INVALID_SOCKET;
-
-    if (!acceptedSocket->acceptedSuccessfully)
-        acceptedSocket->error = WSAGetLastError();
-
-    return acceptedSocket;
-}
-
-void receiveAndPrintIncomingData(SOCKET socketFD, struct AcceptedSocket* acceptedSockets, int acceptedSocketsCount, std::mutex& acceptedSocketsMutex) {
+void receiveAndPrintIncomingData(SOCKET socketFD) {
     char buffer[1024];
 
     while (true) {
-        int amountReceived = recv(socketFD, buffer, 1024, 0);
+        int amountReceived = recv(socketFD, buffer, sizeof(buffer), 0);
 
         if (amountReceived > 0) {
             buffer[amountReceived] = '\0';
-            std::string message(buffer);
-            std::string senderName = message.substr(0, message.find(':')); // Extract sender's name
-            std::cout << senderName << ": " << message.substr(message.find(':') + 2) << std::endl; // Print sender's name and message
-            broadcastMessage(buffer, acceptedSockets, acceptedSocketsCount, socketFD, acceptedSocketsMutex);
+            std::cout << "Received message: " << buffer << std::endl;
+            receiveAndBroadcast(socketFD, buffer);
         }
 
         if (amountReceived == 0)
@@ -62,20 +38,9 @@ void receiveAndPrintIncomingData(SOCKET socketFD, struct AcceptedSocket* accepte
     closesocket(socketFD);
 }
 
-void receiveAndPrintIncomingDataOnSeparateThread(struct AcceptedSocket* pSocket, struct AcceptedSocket* acceptedSockets, int acceptedSocketsCount, std::mutex& acceptedSocketsMutex) {
-    std::thread th(receiveAndPrintIncomingData, pSocket->acceptedSocketFD, acceptedSockets, acceptedSocketsCount, std::ref(acceptedSocketsMutex));
+void startListeningAndPrintMessagesOnNewThread(SOCKET fd) {
+    std::thread th(receiveAndPrintIncomingData, fd);
     th.detach();
-}
-
-void startAcceptingIncomingConnections(SOCKET serverSocketFD, struct AcceptedSocket* acceptedSockets, int& acceptedSocketsCount, std::mutex& acceptedSocketsMutex) {
-    while (true) {
-        struct AcceptedSocket* clientSocket = acceptIncomingConnection(serverSocketFD);
-        acceptedSocketsMutex.lock();
-        acceptedSockets[acceptedSocketsCount++] = *clientSocket;
-        acceptedSocketsMutex.unlock();
-
-        receiveAndPrintIncomingDataOnSeparateThread(clientSocket, acceptedSockets, acceptedSocketsCount, acceptedSocketsMutex);
-    }
 }
 
 int main() {
@@ -113,11 +78,24 @@ int main() {
         return 1;
     }
 
-    struct AcceptedSocket acceptedSockets[10];
-    int acceptedSocketsCount = 0;
-    std::mutex acceptedSocketsMutex;
+    while (true) {
+        SOCKET clientSocket = accept(serverSocketFD, nullptr, nullptr);
+        if (clientSocket == INVALID_SOCKET) {
+            std::cerr << "Accept failed with error: " << WSAGetLastError() << std::endl;
+            closesocket(serverSocketFD);
+            WSACleanup();
+            return 1;
+        }
 
-    startAcceptingIncomingConnections(serverSocketFD, acceptedSockets, acceptedSocketsCount, acceptedSocketsMutex);
+        if (acceptedSocketsCount < MAX_CLIENTS) {
+            acceptedSockets[acceptedSocketsCount++] = clientSocket;
+            startListeningAndPrintMessagesOnNewThread(clientSocket);
+        }
+        else {
+            std::cerr << "Maximum clients reached. Connection rejected." << std::endl;
+            closesocket(clientSocket);
+        }
+    }
 
     closesocket(serverSocketFD);
     WSACleanup();
