@@ -3,64 +3,10 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <thread>
-#include <openssl/aes.h>
-#include <openssl/rand.h>
 
 #pragma comment(lib, "ws2_32.lib")
-#pragma comment(lib, "libcrypto.lib")
-
 
 #define MAX_CLIENTS 10
-
-// Define the pre-shared key (for simplicity)
-#define AES_KEY_SIZE 128
-unsigned char aes_key[AES_KEY_SIZE / 8] = "16bytesecretkey";
-
-// Function to encrypt plaintext using AES
-std::string encryptAES(const std::string& plaintext) {
-    AES_KEY enc_key;
-    AES_set_encrypt_key(aes_key, AES_KEY_SIZE, &enc_key);
-
-    std::string ciphertext;
-
-    // Ensure plaintext length is multiple of AES block size
-    int paddedLen = (plaintext.length() + AES_BLOCK_SIZE - 1) / AES_BLOCK_SIZE * AES_BLOCK_SIZE;
-    char* padded_plaintext = new char[paddedLen];
-    memset(padded_plaintext, 0, paddedLen);
-    memcpy(padded_plaintext, plaintext.c_str(), plaintext.length());
-
-    for (int i = 0; i < paddedLen; i += AES_BLOCK_SIZE) {
-        unsigned char encrypted_block[AES_BLOCK_SIZE];
-        AES_encrypt(reinterpret_cast<const unsigned char*>(&padded_plaintext[i]), encrypted_block, &enc_key);
-        ciphertext.append(reinterpret_cast<char*>(encrypted_block), AES_BLOCK_SIZE);
-    }
-
-    delete[] padded_plaintext;
-
-    return ciphertext;
-}
-
-// Function to decrypt ciphertext using AES
-std::string decryptAES(const std::string& ciphertext) {
-    AES_KEY dec_key;
-    AES_set_decrypt_key(aes_key, AES_KEY_SIZE, &dec_key);
-
-    std::string decryptedtext;
-
-    for (int i = 0; i < ciphertext.length(); i += AES_BLOCK_SIZE) {
-        unsigned char decrypted_block[AES_BLOCK_SIZE];
-        AES_decrypt(reinterpret_cast<const unsigned char*>(&ciphertext[i]), decrypted_block, &dec_key);
-        decryptedtext.append(reinterpret_cast<char*>(decrypted_block), AES_BLOCK_SIZE);
-    }
-
-    // Remove padding
-    size_t pad_pos = decryptedtext.find_last_not_of('\0');
-    if (pad_pos != std::string::npos) {
-        decryptedtext = decryptedtext.substr(0, pad_pos + 1);
-    }
-
-    return decryptedtext;
-}
 
 SOCKET acceptedSockets[MAX_CLIENTS];
 int acceptedSocketsCount = 0;
