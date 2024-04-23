@@ -1,16 +1,17 @@
-#include <iostream>
-#include <cstring>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <thread>
+#include <iostream> // Standard input/output stream
+#include <cstring> // String manipulation functions
+#include <winsock2.h> // Windows Sockets API
+#include <ws2tcpip.h> // TCP/IP protocol
+#include <thread> // Multi-threading support
 
-#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "ws2_32.lib") // Linking with Winsock library
 
-#define MAX_CLIENTS 10
+#define MAX_CLIENTS 10 // Maximum number of clients the server can handle
 
-SOCKET acceptedSockets[MAX_CLIENTS];
-int acceptedSocketsCount = 0;
+SOCKET acceptedSockets[MAX_CLIENTS]; // Array to store accepted sockets
+int acceptedSocketsCount = 0; // Counter to keep track of accepted sockets
 
+// Function to receive data from a sender socket and broadcast it to all other accepted sockets
 void receiveAndBroadcast(SOCKET senderSocket, const char* buffer) {
     for (int i = 0; i < acceptedSocketsCount; ++i) {
         if (acceptedSockets[i] != senderSocket) {
@@ -19,6 +20,7 @@ void receiveAndBroadcast(SOCKET senderSocket, const char* buffer) {
     }
 }
 
+// Function to receive and print incoming data on a socket
 void receiveAndPrintIncomingData(SOCKET socketFD) {
     char buffer[1024];
 
@@ -28,19 +30,20 @@ void receiveAndPrintIncomingData(SOCKET socketFD) {
         if (amountReceived > 0) {
             buffer[amountReceived] = '\0';
             std::cout << "Received message: " << buffer << std::endl;
-            receiveAndBroadcast(socketFD, buffer);
+            receiveAndBroadcast(socketFD, buffer); // Broadcast the received message
         }
 
         if (amountReceived == 0)
             break;
     }
 
-    closesocket(socketFD);
+    closesocket(socketFD); // Close the socket after receiving data
 }
 
+// Function to start listening for incoming data on a new thread
 void startListeningAndPrintMessagesOnNewThread(SOCKET fd) {
-    std::thread th(receiveAndPrintIncomingData, fd);
-    th.detach();
+    std::thread th(receiveAndPrintIncomingData, fd); // Create a new thread for listening
+    th.detach(); // Detach the thread to allow it to run independently
 }
 
 int main() {
@@ -88,17 +91,17 @@ int main() {
         }
 
         if (acceptedSocketsCount < MAX_CLIENTS) {
-            acceptedSockets[acceptedSocketsCount++] = clientSocket;
-            startListeningAndPrintMessagesOnNewThread(clientSocket);
+            acceptedSockets[acceptedSocketsCount++] = clientSocket; // Add the accepted socket to the array
+            startListeningAndPrintMessagesOnNewThread(clientSocket); // Start listening on a new thread
         }
         else {
             std::cerr << "Maximum clients reached. Connection rejected." << std::endl;
-            closesocket(clientSocket);
+            closesocket(clientSocket); // Close the socket if maximum clients reached
         }
     }
 
-    closesocket(serverSocketFD);
-    WSACleanup();
+    closesocket(serverSocketFD); // Close the server socket
+    WSACleanup(); // Clean up Winsock resources
 
     return 0;
 }
